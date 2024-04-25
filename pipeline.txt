@@ -1,0 +1,41 @@
+
+Speech recog. route:
+1. Record Speech
+2. Format prompt to include transcribed linex
+3. Resemble to speak Claude output
+
+No speech recog. :
+1. Pre-format prompt to have lines
+2. from above
+3.  " " 
+
+
+
+==========================
+Prompt idea
+Imagine you are a talented actor in a play called the Adding Machine. Your job is to take the context of the scene and previous lines and provide your character's next line.
+
+{Character description}
+
+Scene context:
+{Scene context}
+
+Previous lines:
+{previous lines}
+
+You:
+
+=== 
+Lines:
+
+Character A:
+... 
+
+
+=============
+
+Feeding the prompt
+- Triggered by hearing word/line that will tell it to run
+- Triggered by button
+
+Generating next line and reading it
