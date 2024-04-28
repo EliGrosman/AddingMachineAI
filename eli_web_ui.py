@@ -4,10 +4,14 @@ import os
 from anthropic import Anthropic
 from dotenv import load_dotenv
 import numpy as np
+from resemble import Resemble
+from playsound import playsound
 
 load_dotenv()
 
 client = Anthropic(api_key = os.environ["ANTHROPIC_API_KEY"])
+Resemble.api_key("cE3HL6w4rVCF2l8WqBvAHAtt")
+
 
 if os.path.isfile("./saved_prompts.json"):
     fname = "saved_prompts.json"
@@ -98,6 +102,38 @@ def load_saved():
 def reset():
     return "", 0, ""
 
+def play_clip(body):
+    project = Resemble.v2.projects.get(project_uuid)
+
+# creates clip
+# returns resemble link
+def create_clip(body): 
+    print(body)
+    response = Resemble.v2.clips.create_sync(
+        project_uuid = "7848927a",
+        voice_uuid = "34f51533",
+        body = body,
+        is_public = False,
+        is_archived = False,
+        title = None,
+        sample_rate = None,
+        output_format=None,
+        precision=None,
+        include_timestamps=None,
+        raw=True
+    )
+
+    if response['success']:
+        clip = response['item']
+        clip_uuid = clip['uuid']
+        clip_url = clip['audio_src']
+        clip_raw = clip['raw_audio']
+        # playsound(clip_raw)
+        print(clip_url)
+    else:
+        print("Response was unsuccessful.")
+    
+
 with gr.Blocks(title="Adding Machine Prompt Editor", theme=gr.themes.Soft()) as demo:
     with gr.Tabs():
         with gr.Tab("Edit prompt"):
@@ -130,6 +166,7 @@ with gr.Blocks(title="Adding Machine Prompt Editor", theme=gr.themes.Soft()) as 
             with gr.Row():
                 generate_btn = gr.Button(value="Generate Next Line", variant="primary")
                 reset_btn = gr.Button(value="Reset", variant="primary")
+                play_btn = gr.Button(value="Play", variant="primary")
             with gr.Row():
                 output = gr.TextArea(label="Generated Prompts", interactive=False)
                 num_generated = gr.Number(value=0, visible=False)
@@ -140,4 +177,6 @@ with gr.Blocks(title="Adding Machine Prompt Editor", theme=gr.themes.Soft()) as 
     gen_lines_tab.select(fn=load_saved, inputs=[], outputs=[gen_prompt, gen_lines, gen_info])
     generate_btn.click(fn=generate_prompts, inputs=[gen_prompt, gen_lines, temperature, top_p, num_generated, generated_lines_storage], outputs=[output, num_generated, generated_lines_storage])
     reset_btn.click(fn=reset, outputs=[output, num_generated, generated_lines_storage])
+    play_btn.click(fn=create_clip, inputs=generated_lines_storage)
+
 demo.launch()
