@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 import numpy as np
 from resemble import Resemble
 from playsound import playsound
+from live_transcription import listen2 as transcribe
 
 load_dotenv()
 
@@ -21,37 +22,17 @@ else:
 with open(fname, "r") as f:
     templates = json.load(f)
 
-def save_prompts(main_prompt, scene_desc, char_desc, lines):
+def save_prompts(main_prompt, scene_desc, char_desc):#, lines):
     templates["main_prompt"] = main_prompt
     templates["scene_desc"] = scene_desc
     templates["char_desc"] = char_desc
-    templates["lines"] = lines
+    # templates["lines"] = lines
 
     with open("./saved_prompts.json", "w") as f:
         json.dump(templates, f)
 
-def generate_prompts(formatted_prompt, lines, temperature, top_p, num_generated, generated_lines_storage):      
-    split_lines = (lines.split("\n"))
-    your_line_idxs = [i for i in range(len(split_lines)) if len(split_lines[i].split(":")[1].strip()) == 0]
-
-    idx = your_line_idxs[num_generated]
-    
-    try:
-        next_line = split_lines[idx+1]
-    except:
-        next_line = "None"
-    
-    if num_generated == 0:
-        gen_lines = []
-    else:
-        gen_lines = generated_lines_storage.split("<SPLIT>")
-    
-    for i in range(len(gen_lines)):
-        split_lines[your_line_idxs[i]] += " " + gen_lines[i]
-
-    prev_lines = np.array(split_lines)[list(range(0, idx+1))]
-    lines_template = "\n".join(prev_lines)
-    p = formatted_prompt.format(lines=lines_template, next_line=next_line)
+def generate_prompts(formatted_prompt, temperature, top_p, lines):      
+    p = formatted_prompt.format(lines=lines)
 
     message = client.messages.create(
         max_tokens=1024,
@@ -68,12 +49,7 @@ def generate_prompts(formatted_prompt, lines, temperature, top_p, num_generated,
         
     gen_line = message.content[0].text
 
-    split_lines[your_line_idxs[num_generated]] += " " + gen_line
-    gen_lines.append(gen_line)
-
-
-    
-    return "\n".join(np.array(split_lines)[list(range(0, idx+1))]), num_generated + 1, "<SPLIT>".join(gen_lines)
+    return gen_line
     
 def load_saved():
     with open("./saved_prompts.json", "r") as f:
@@ -81,23 +57,23 @@ def load_saved():
     main_prompt = saved["main_prompt"] 
     scene_desc = saved["scene_desc"] 
     char_desc = saved["char_desc"] 
-    lines = saved["lines"] 
+    #lines = saved["lines"] 
     
     formatted_prompt = main_prompt
 
     formatted_prompt += f"\n\nScene Description:\n{scene_desc}\n"
     formatted_prompt += f"\nCharacter Description:\n{char_desc}\n"
     formatted_prompt += "\nLines:\n{lines}\n"
-    formatted_prompt += "Next line:\n{next_line}\n"
+    #formatted_prompt += "Next line:\n{next_line}\n"
     
-    split_lines = (lines.split("\n"))
-    num_to_generate = sum([1 for i in range(len(split_lines)) if len(split_lines[i].split(":")[1].strip()) == 0])
+    #split_lines = (lines.split("\n"))
+    #num_to_generate = sum([1 for i in range(len(split_lines)) if len(split_lines[i].split(":")[1].strip()) == 0])
     
-    info = f"""
-    Number of lines to generate: {num_to_generate}
-    """
+    #info = f"""
+    #Number of lines to generate: {num_to_generate}
+    #"""
     
-    return formatted_prompt, lines, info
+    return formatted_prompt# , lines, info
 
 def reset():
     return "", 0, ""
@@ -145,8 +121,8 @@ with gr.Blocks(title="Adding Machine Prompt Editor", theme=gr.themes.Soft()) as 
                     scene_desc = gr.TextArea(label="Scene Description", value=templates["scene_desc"], interactive=True)
                 with gr.Column():
                     char_desc = gr.TextArea(label="Character Description", value=templates["char_desc"], interactive=True)
-            with gr.Row():
-                lines = gr.TextArea(label="Lines", value=templates["lines"], interactive=True)
+            #with gr.Row():
+            #    lines = gr.TextArea(label="Lines", value=templates["lines"], interactive=True)
 
             with gr.Row():
                     save_btn = gr.Button(value="Save prompt", variant='primary')  
@@ -157,11 +133,15 @@ with gr.Blocks(title="Adding Machine Prompt Editor", theme=gr.themes.Soft()) as 
                 with gr.Column():
                     gen_prompt = gr.TextArea(label="Prompt template", interactive=False)
                 with gr.Column():
-                    gen_lines = gr.TextArea(label="Lines", interactive=False)
-                    gen_info = gr.TextArea(label="Info", interactive=False)
-                    
-                    temperature = gr.Slider(label="Temperature (Higher = more creative, lower = more predictable response)", value=0.7, minimum=0.0, maximum=1.0, step=0.01, interactive=True)
-                    top_p = gr.Slider(label="Top P (Higher = larger set of words to choose from, lower = choose from the most likely words)", value=0.5, minimum=0.0, maximum=1.0, step=0.01, interactive=True)
+                    transcript_lines = gr.TextArea(label="Transcribed Lines", interactive=False)
+                    block_size = gr.Slider(label="Number of seconds per line (cannot be greater than total time it will listen to)", value=1, minimum=1, maximum=60, step=1, interactive=True)
+
+                    num_secs = gr.Slider(label="Number of seconds to transcribe", value=5, minimum=1, maximum=60, step=0.1, interactive=True)
+                    transcribe_btn = gr.Button(value="Transcribe", variant="primary")
+                    #gen_info = gr.TextArea(label="Info", interactive=False)
+            with gr.Row():
+                temperature = gr.Slider(label="Temperature (Higher = more creative, lower = more predictable response)", value=0.7, minimum=0.0, maximum=1.0, step=0.01, interactive=True)
+                top_p = gr.Slider(label="Top P (Higher = larger set of words to choose from, lower = choose from the most likely words)", value=0.5, minimum=0.0, maximum=1.0, step=0.01, interactive=True)
                     
             with gr.Row():
                 generate_btn = gr.Button(value="Generate Next Line", variant="primary")
@@ -173,10 +153,11 @@ with gr.Blocks(title="Adding Machine Prompt Editor", theme=gr.themes.Soft()) as 
                 generated_lines_storage = gr.TextArea(interactive=False, value=None, visible=False)
                 
 
-    save_btn.click(fn=save_prompts, inputs=[main_prompt, scene_desc, char_desc, lines])
-    gen_lines_tab.select(fn=load_saved, inputs=[], outputs=[gen_prompt, gen_lines, gen_info])
-    generate_btn.click(fn=generate_prompts, inputs=[gen_prompt, gen_lines, temperature, top_p, num_generated, generated_lines_storage], outputs=[output, num_generated, generated_lines_storage])
+    save_btn.click(fn=save_prompts, inputs=[main_prompt, scene_desc, char_desc])#, lines])
+    gen_lines_tab.select(fn=load_saved, inputs=[], outputs=[gen_prompt])#, gen_lines, gen_info])
+    generate_btn.click(fn=generate_prompts, inputs=[gen_prompt, temperature, top_p, transcript_lines], outputs=[output])
     reset_btn.click(fn=reset, outputs=[output, num_generated, generated_lines_storage])
-    play_btn.click(fn=create_clip, inputs=generated_lines_storage)
+    play_btn.click(fn=create_clip, inputs=[output])
+    transcribe_btn.click(fn=transcribe, inputs=[num_secs, block_size], outputs=[transcript_lines])
 
 demo.launch()
