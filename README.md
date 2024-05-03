@@ -12,4 +12,5 @@ http://127.0.0.1:7861
 
 To update:
 `cd ~/Desktop/AddingMachineAI`
+`git reset --hard HEAD`
 `git pull`
