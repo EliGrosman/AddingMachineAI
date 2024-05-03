@@ -14,3 +14,7 @@ To update:
 `cd ~/Desktop/AddingMachineAI`
 `git reset --hard HEAD`
 `git pull`
+
+If error:
+do ctrl+C in command line, not cmd+C
+and then run gradio command again.
