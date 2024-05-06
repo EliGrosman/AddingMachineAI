@@ -76,19 +76,27 @@ def load_saved():
     return formatted_prompt# , lines, info
 
 def reset():
+    #load_saved()
     return "", 0, ""
-
-def play_clip(body):
-    project = Resemble.v2.projects.get(project_uuid)
 
 # creates clip
 # returns resemble link
-def create_clip(body): 
-    print(body)
+def create_clip(formatted_prompt, lines, temperature, top_p, num_generated, body, audio):
+    print(audio)
+    print(f"TYPES: {type(audio)}, {type(audio[0])}, {type(audio[1])}")
+
+    model = whisper.load_model("base")
+    options = whisper.DecodingOptions(language="en")
+    result = model.transcribe(audio[1].astype(np.float32), fp16=False)
+    new_lines = lines + "\nAI:" + result["text"] # TODO check this
+    print(new_lines)
+    text = generate_prompts(formatted_prompt, new_lines, temperature, top_p, num_generated, body)[2]
+    print(text)
+
     response = Resemble.v2.clips.create_sync(
         project_uuid = "7848927a",
         voice_uuid = "34f51533",
-        body = body,
+        body = text,
         is_public = False,
         is_archived = False,
         title = None,
@@ -104,11 +112,19 @@ def create_clip(body):
         clip_uuid = clip['uuid']
         clip_url = clip['audio_src']
         clip_raw = clip['raw_audio']
-        # playsound(clip_raw)
         print(clip_url)
+        return gr.Audio(value=clip_url)
     else:
+        print(response)
         print("Response was unsuccessful.")
     
+input_audio = gr.Audio(type = "numpy", sources=["microphone"], waveform_options=gr.WaveformOptions(
+        waveform_color="#01C6FF",
+        waveform_progress_color="#0066B4",
+        skip_length=2,
+        show_controls=False,
+    ),
+)
 
 with gr.Blocks(title="Adding Machine Prompt Editor", theme=gr.themes.Soft()) as demo:
     with gr.Tabs():
@@ -126,12 +142,11 @@ with gr.Blocks(title="Adding Machine Prompt Editor", theme=gr.themes.Soft()) as 
 
             with gr.Row():
                     save_btn = gr.Button(value="Save prompt", variant='primary')  
-                    
-
+      
         with gr.Tab("Generate Lines") as gen_lines_tab:
             with gr.Row():
                 with gr.Column():
-                    gen_prompt = gr.TextArea(label="Prompt template", interactive=False)
+                    gen_prompt = gr.TextArea(label="Prompt template", interactive=False, visible=False)
                 with gr.Column():
                     transcript_lines = gr.TextArea(label="Transcribed Lines", interactive=False)
                     block_size = gr.Slider(label="Number of seconds per line (cannot be greater than total time it will listen to)", value=1, minimum=1, maximum=60, step=1, interactive=True)
@@ -146,12 +161,14 @@ with gr.Blocks(title="Adding Machine Prompt Editor", theme=gr.themes.Soft()) as 
             with gr.Row():
                 generate_btn = gr.Button(value="Generate Next Line", variant="primary")
                 reset_btn = gr.Button(value="Reset", variant="primary")
-                play_btn = gr.Button(value="Play", variant="primary")
             with gr.Row():
-                output = gr.TextArea(label="Generated Prompts", interactive=False)
+                output = gr.TextArea(label="Generated Prompts", interactive=False, visible=False)
                 num_generated = gr.Number(value=0, visible=False)
                 generated_lines_storage = gr.TextArea(interactive=False, value=None, visible=False)
-                
+            with gr.Row():
+                play_btn = gr.Interface(fn=create_clip, submit_btn = "Submit", inputs=[gen_prompt, gen_lines, temperature, top_p, num_generated, generated_lines_storage, input_audio], outputs=["audio"])
+        
+                   
 
     save_btn.click(fn=save_prompts, inputs=[main_prompt, scene_desc, char_desc])#, lines])
     gen_lines_tab.select(fn=load_saved, inputs=[], outputs=[gen_prompt])#, gen_lines, gen_info])
