@@ -1,38 +1,75 @@
 import gradio as gr
-import json
+import pandas as pd
 import os
 from anthropic import Anthropic
 from dotenv import load_dotenv
-import numpy as np
-from resemble import Resemble
-from playsound import playsound
-from live_transcription import listen2 as transcribe
+from resemble_wrapper import Resemble_Wrapper
+import re
+from scipy.io import wavfile
+import uuid
 
 load_dotenv()
 
 client = Anthropic(api_key = os.environ["ANTHROPIC_API_KEY"])
-Resemble.api_key("cE3HL6w4rVCF2l8WqBvAHAtt")
+resemble = Resemble_Wrapper(os.environ["RESEMBLE_API_KEY"])
 
-
-if os.path.isfile("./saved_prompts.json"):
-    fname = "saved_prompts.json"
+if os.path.isfile("./saved_prompts.csv"):
+    prompts = pd.read_csv("./saved_prompts.csv")
 else:
-    fname = "text_templates.json"
+    prompts = pd.DataFrame({"prompt_name": [], "main_prompt": [], "scene_desc": [], "char_desc": [], "lines": []})
+    prompts.to_csv("./saved_prompts.csv", index = False)
 
-with open(fname, "r") as f:
-    templates = json.load(f)
+def select_prompt(choice):
+    global prompts
+    if type(choice) is not type([]):
+        row = prompts[prompts["prompt_name"] == choice].iloc[0]
+        return row["prompt_name"], row["main_prompt"], row["scene_desc"], row["char_desc"], row["lines"]
+    return "", "", "", "", ""
 
-def save_prompts(main_prompt, scene_desc, char_desc):#, lines):
-    templates["main_prompt"] = main_prompt
-    templates["scene_desc"] = scene_desc
-    templates["char_desc"] = char_desc
-    # templates["lines"] = lines
+def select_prompt2(choice):
+    global prompts
+    if type(choice) is not type([]):
+        row = prompts[prompts["prompt_name"] == choice].iloc[0]
+        
+        formatted_prompt = row["main_prompt"] + "\n\nScene Description:\n" + \
+                           row["scene_desc"] + "\n\nCharacter Description:\n" + \
+                           row["char_desc"] + "\n\nLines:\n" + \
+                           "{lines}"
+        return formatted_prompt, row["lines"]
+    return "", ""
 
-    with open("./saved_prompts.json", "w") as f:
-        json.dump(templates, f)
 
-def generate_prompts(formatted_prompt, temperature, top_p, lines):      
+def overwrite_prompt(prompt_name, main_prompt, scene_desc, char_desc, lines):
+    global prompts
+    prompts.loc[prompts["prompt_name"] == prompt_name, "main_prompt"] = main_prompt
+    prompts.loc[prompts["scene_desc"] == scene_desc, "scene_desc"] = scene_desc
+    prompts.loc[prompts["char_desc"] == char_desc, "char_desc"] = char_desc
+    prompts.loc[prompts["lines"] == lines, "lines"] = lines
+    
+    prompts.to_csv("./saved_prompts.csv", index = False)
+    
+    gr.Info(f"Overwrote prompt {prompt_name}")
+    return gr.Dropdown(choices = list(prompts["prompt_name"]))
+    
+def save_new(prompt_name, main_prompt, scene_desc, char_desc, lines):
+    global prompts
+    if prompt_name in list(prompts["prompt_name"]):
+        gr.Warning(f"Prompt '{main_prompt}' already exists")
+    else:
+        new_r = pd.DataFrame({"prompt_name": [prompt_name], "main_prompt": [main_prompt], "scene_desc": [scene_desc], "char_desc": [char_desc], "lines": [lines]})
+        prompts = pd.concat([prompts, new_r])
+        prompts.to_csv("./saved_prompts.csv", index = False)
+        
+        gr.Info(f"Saved prompt {prompt_name}")
+    return gr.Dropdown(choices = list(prompts["prompt_name"]))
+
+def generate_prompts(formatted_prompt, temperature, top_p, lines, voice, project, prompt_name):      
     p = formatted_prompt.format(lines=lines)
+    if type(voice) is not type("") or type(project) is not type(""):
+        gr.Warning("Please choose a project and voice")
+        return "", None
+    voice_uuid = re.search(r'\[(.*?)\]', voice).group(1)
+    project_uuid = re.search(r'\[(.*?)\]', project).group(1)
 
     message = client.messages.create(
         max_tokens=1024,
@@ -48,133 +85,72 @@ def generate_prompts(formatted_prompt, temperature, top_p, lines):
     )
         
     gen_line = message.content[0].text
-
-    return gen_line
+    gr.Info("Claude finished generating line")
     
-def load_saved():
-    with open("./saved_prompts.json", "r") as f:
-        saved = json.load(f)
-    main_prompt = saved["main_prompt"] 
-    scene_desc = saved["scene_desc"] 
-    char_desc = saved["char_desc"] 
-    #lines = saved["lines"] 
+    resemble.generate(title=prompt_name, text=gen_line, project_uuid=project_uuid, voice_uuid=voice_uuid)
+    gr.Info("Resemble finished generating audio")
     
-    formatted_prompt = main_prompt
-
-    formatted_prompt += f"\n\nScene Description:\n{scene_desc}\n"
-    formatted_prompt += f"\nCharacter Description:\n{char_desc}\n"
-    formatted_prompt += "\nLines:\n{lines}\n"
-    #formatted_prompt += "Next line:\n{next_line}\n"
     
-    #split_lines = (lines.split("\n"))
-    #num_to_generate = sum([1 for i in range(len(split_lines)) if len(split_lines[i].split(":")[1].strip()) == 0])
-    
-    #info = f"""
-    #Number of lines to generate: {num_to_generate}
-    #"""
-    
-    return formatted_prompt# , lines, info
+    return gen_line, gr.Audio(value=f"./output/{prompt_name}.wav", interactive=True)
 
 def reset():
     #load_saved()
-    return "", 0, ""
+    return "", gr.Audio(interactive=False)
 
-# creates clip
-# returns resemble link
-def create_clip(formatted_prompt, lines, temperature, top_p, num_generated, body, audio):
-    print(audio)
-    print(f"TYPES: {type(audio)}, {type(audio[0])}, {type(audio[1])}")
-
-    model = whisper.load_model("base")
-    options = whisper.DecodingOptions(language="en")
-    result = model.transcribe(audio[1].astype(np.float32), fp16=False)
-    new_lines = lines + "\nAI:" + result["text"] # TODO check this
-    print(new_lines)
-    text = generate_prompts(formatted_prompt, new_lines, temperature, top_p, num_generated, body)[2]
-    print(text)
-
-    response = Resemble.v2.clips.create_sync(
-        project_uuid = "7848927a",
-        voice_uuid = "34f51533",
-        body = text,
-        is_public = False,
-        is_archived = False,
-        title = None,
-        sample_rate = None,
-        output_format=None,
-        precision=None,
-        include_timestamps=None,
-        raw=True
-    )
-
-    if response['success']:
-        clip = response['item']
-        clip_uuid = clip['uuid']
-        clip_url = clip['audio_src']
-        clip_raw = clip['raw_audio']
-        print(clip_url)
-        return gr.Audio(value=clip_url)
-    else:
-        print(response)
-        print("Response was unsuccessful.")
-    
-input_audio = gr.Audio(type = "numpy", sources=["microphone"], waveform_options=gr.WaveformOptions(
-        waveform_color="#01C6FF",
-        waveform_progress_color="#0066B4",
-        skip_length=2,
-        show_controls=False,
-    ),
-)
+def list_voices():
+    global prompts
+    voices = resemble.list_voices()
+    projects = resemble.list_projects()
+    r1 = [f"{v['name']} [{v['uuid']}]" for v in voices]
+    r2 = [f"{v['name']}, [{v['uuid']}]" for v in projects]
+    return gr.Dropdown(choices=r1), gr.Dropdown(choices=r2), list(prompts["prompt_name"])
 
 with gr.Blocks(title="Adding Machine Prompt Editor", theme=gr.themes.Soft()) as demo:
     with gr.Tabs():
         with gr.Tab("Edit prompt"):
             with gr.Row():
-                main_prompt = gr.TextArea(label="Prompt template", value=templates["main_prompt"], interactive=True)
+                drop = gr.Dropdown(choices = list(prompts["prompt_name"]), label="Choose stored prompt")
+                prompt_name = gr.Textbox(label="Prompt name")                
+            with gr.Row():
+                main_prompt = gr.TextArea(label="Prompt template", value="", interactive=True)
 
             with gr.Row():
                 with gr.Column():
-                    scene_desc = gr.TextArea(label="Scene Description", value=templates["scene_desc"], interactive=True)
+                    scene_desc = gr.TextArea(label="Scene Description", value="", interactive=True)
                 with gr.Column():
-                    char_desc = gr.TextArea(label="Character Description", value=templates["char_desc"], interactive=True)
-            #with gr.Row():
-            #    lines = gr.TextArea(label="Lines", value=templates["lines"], interactive=True)
+                    char_desc = gr.TextArea(label="Character Description", value="", interactive=True)
+            with gr.Row():
+                lines = gr.TextArea(label="Lines", value="", interactive=True)
 
             with gr.Row():
-                    save_btn = gr.Button(value="Save prompt", variant='primary')  
-      
+                    overwrite_btn = gr.Button(value="Overwrite selected prompt", variant='primary')  
+                    save_btn = gr.Button(value="Save as new prompt", variant='primary')  
         with gr.Tab("Generate Lines") as gen_lines_tab:
             with gr.Row():
-                with gr.Column():
-                    gen_prompt = gr.TextArea(label="Prompt template", interactive=False, visible=False)
-                with gr.Column():
-                    transcript_lines = gr.TextArea(label="Transcribed Lines", interactive=False)
-                    block_size = gr.Slider(label="Number of seconds per line (cannot be greater than total time it will listen to)", value=1, minimum=1, maximum=60, step=1, interactive=True)
-
-                    num_secs = gr.Slider(label="Number of seconds to transcribe", value=5, minimum=1, maximum=60, step=0.1, interactive=True)
-                    transcribe_btn = gr.Button(value="Transcribe", variant="primary")
-                    #gen_info = gr.TextArea(label="Info", interactive=False)
+                drop2 = gr.Dropdown(choices = list(prompts["prompt_name"]), label="Choose stored prompt")
             with gr.Row():
-                temperature = gr.Slider(label="Temperature (Higher = more creative, lower = more predictable response)", value=0.7, minimum=0.0, maximum=1.0, step=0.01, interactive=True)
-                top_p = gr.Slider(label="Top P (Higher = larger set of words to choose from, lower = choose from the most likely words)", value=0.5, minimum=0.0, maximum=1.0, step=0.01, interactive=True)
-                    
+                with gr.Column():
+                    gen_prompt = gr.TextArea(label="Prompt template", interactive=False)
+                    temperature = gr.Slider(label="Temperature (Higher = more creative, lower = more predictable response)", value=0.7, minimum=0.0, maximum=1.0, step=0.01, interactive=True)
+                    top_p = gr.Slider(label="Top P (Higher = larger set of words to choose from, lower = choose from the most likely words)", value=0.5, minimum=0.0, maximum=1.0, step=0.01, interactive=True)
+                                       
+                with gr.Column():
+                    gen_lines = gr.TextArea(label="Lines", interactive=True)
+                    project = gr.Dropdown(choices=["a", "b"], label="Resemble Project", interactive=True)
+                    voice = gr.Dropdown(choices=["a", "b"], label="Voice", interactive=True)
             with gr.Row():
-                generate_btn = gr.Button(value="Generate Next Line", variant="primary")
+                generate_btn = gr.Button(value="Generate Line", variant="primary")
                 reset_btn = gr.Button(value="Reset", variant="primary")
             with gr.Row():
-                output = gr.TextArea(label="Generated Prompts", interactive=False, visible=False)
-                num_generated = gr.Number(value=0, visible=False)
-                generated_lines_storage = gr.TextArea(interactive=False, value=None, visible=False)
-            with gr.Row():
-                play_btn = gr.Interface(fn=create_clip, submit_btn = "Submit", inputs=[gen_prompt, gen_lines, temperature, top_p, num_generated, generated_lines_storage, input_audio], outputs=["audio"])
-        
-                   
-
-    save_btn.click(fn=save_prompts, inputs=[main_prompt, scene_desc, char_desc])#, lines])
-    gen_lines_tab.select(fn=load_saved, inputs=[], outputs=[gen_prompt])#, gen_lines, gen_info])
-    generate_btn.click(fn=generate_prompts, inputs=[gen_prompt, temperature, top_p, transcript_lines], outputs=[output])
-    reset_btn.click(fn=reset, outputs=[output, num_generated, generated_lines_storage])
-    play_btn.click(fn=create_clip, inputs=[output])
-    transcribe_btn.click(fn=transcribe, inputs=[num_secs, block_size], outputs=[transcript_lines])
-
+                output = gr.TextArea(label="Claude Output", interactive=False, visible=True)  
+                output_aud = gr.Audio(label="Resemble Output", type="filepath", interactive=False)
+    drop.change(fn=select_prompt, inputs=drop, outputs=[prompt_name, main_prompt, scene_desc, char_desc, lines])
+    drop2.change(fn=select_prompt2, inputs=drop2, outputs=[gen_prompt, gen_lines])
+    overwrite_btn.click(fn=overwrite_prompt, inputs=[prompt_name, main_prompt, scene_desc, char_desc, lines], outputs=[drop])
+    save_btn.click(fn=save_new, inputs=[prompt_name, main_prompt, scene_desc, char_desc, lines], outputs=[drop])
+    generate_btn.click(fn=generate_prompts, inputs=[gen_prompt, temperature, top_p, gen_lines, voice, project, drop2], outputs=[output, output_aud])
+    reset_btn.click(fn=reset, outputs=[output, output_aud])
+    gen_lines_tab.select(fn=list_voices, inputs=[], outputs=[voice, project, drop2])
+    
+                    
 demo.launch()
