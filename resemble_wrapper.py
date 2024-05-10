@@ -49,7 +49,6 @@ class Resemble_Wrapper(object):
     
     def generate(self, title, text, project_uuid, voice_uuid, out_dir="./output/"):
         response = Resemble.v2.clips.create_sync(project_uuid=project_uuid, voice_uuid=voice_uuid, body=text, title=title)
-        
         url = response['item']['audio_src']
         
         out_path = os.path.join(out_dir, title + ".wav")
