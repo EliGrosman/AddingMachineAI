@@ -28,7 +28,16 @@ class Resemble_Wrapper(object):
             print("Error authenticating with Resemble. Please check if your API key is correct")
             
     def list_projects(self):
-        response = Resemble.v2.projects.all(page=1, page_size=1000)
+        i = 0
+        while i < 5:
+            try:
+                response = Resemble.v2.projects.all(page=1, page_size=1000)
+                break
+            except:
+                pass
+            i += 1
+        else:
+            raise Exception("Resemble list projects failed after 5 retries")
         
         out = []
         for project in response["items"]:
@@ -39,7 +48,16 @@ class Resemble_Wrapper(object):
         return out
     
     def list_voices(self):
-        response = Resemble.v2.voices.all(page=1, page_size=1000)
+        i = 0
+        while i < 5:
+            try:
+                response = Resemble.v2.voices.all(page=1, page_size=1000)
+                break
+            except:
+                pass
+            i += 1
+        else:
+            raise Exception("Resemble list voices failed after 5 retries")
         
         out = []
         for voice in response["items"]:
@@ -48,7 +66,16 @@ class Resemble_Wrapper(object):
         return out
     
     def generate(self, title, text, project_uuid, voice_uuid, out_dir="./output/"):
-        response = Resemble.v2.clips.create_sync(project_uuid=project_uuid, voice_uuid=voice_uuid, body=text, title=title)
+        i = 0
+        while i < 5:
+            try:
+                response = Resemble.v2.clips.create_sync(project_uuid=project_uuid, voice_uuid=voice_uuid, body=text, title=title)
+                break
+            except:
+                pass
+            i += 1
+        else:
+            raise Exception("Resemble generate clip failed after 5 retries")
         url = response['item']['audio_src']
         
         out_path = os.path.join(out_dir, title + ".wav")
