@@ -53,6 +53,7 @@ class Resemble_Wrapper(object):
         while i < 5:
             try:
                 response = Resemble.v2.voices.all(page=1, page_size=1000)
+                print(response)
                 if "items" in response:
                     break
             except:
@@ -72,7 +73,7 @@ class Resemble_Wrapper(object):
         while i < 5:
             try:
                 response = Resemble.v2.clips.create_sync(project_uuid=project_uuid, voice_uuid=voice_uuid, body=text, title=title)
-                if "items" in response:
+                if "item" in response:
                     break
             except:
                 pass

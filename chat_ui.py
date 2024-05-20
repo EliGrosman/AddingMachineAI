@@ -5,6 +5,18 @@ from anthropic import Anthropic
 from dotenv import load_dotenv
 from resemble_wrapper import Resemble_Wrapper
 import re
+from gradio.themes.utils.sizes import Size
+
+text_larger = Size(
+    name="text_larger",
+    xxs="14px",
+    xs="16px",
+    sm="18px",
+    md="20px",
+    lg="24px",
+    xl="28px",
+    xxl="32px",
+)
 
 load_dotenv()
 
@@ -122,7 +134,7 @@ def load_gen_tab():
     r2 = [f"{v['name']}, [{v['uuid']}]" for v in projects]
     return gr.Dropdown(choices=r1), gr.Dropdown(choices=r2), gr.Dropdown(choices=list(prompts["prompt_name"]))
 
-with gr.Blocks(title="Adding Machine Prompt Editor", theme=gr.themes.Soft()) as demo:
+with gr.Blocks(title="Adding Machine Prompt Editor", theme=gr.themes.Soft(text_size=text_larger)) as demo:
     with gr.Tabs():
         with gr.Tab("Edit prompt"):
             with gr.Row():
